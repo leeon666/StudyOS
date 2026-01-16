@@ -48,3 +48,76 @@
 ```bash
 git clone [https://github.com/leeon666/StudyOS.git](https://github.com/leeon666/StudyOS.git)
 cd StudyOS
+
+```
+
+### 2. 安装依赖
+
+```bash
+npm install
+# 或者使用 yarn
+yarn install
+
+```
+
+### 3. 启动开发模式
+
+```bash
+npm run dev
+
+```
+
+此时将会同时启动 Electron 主进程和渲染进程，支持热更新。
+
+---
+
+## 📦 打包构建 (Build)
+
+生成生产环境的可执行文件（如 .exe）：
+
+```bash
+# 构建所有平台的应用
+npm run build
+
+# 仅构建 Windows 版本
+npm run build:win
+
+```
+
+构建产物将位于 `dist` 或 `dist_electron` 目录下。
+
+---
+
+## 📂 目录结构 (Project Structure)
+
+```text
+StudyOS/
+├── src/
+│   ├── main/          # Electron 主进程代码
+│   ├── preload/       # 预加载脚本 (Preload Script)
+│   └── renderer/      # React 渲染进程代码 (UI)
+├── resources/         # 静态资源图标等
+├── electron.vite.config.ts  # Vite 配置文件
+└── package.json       # 项目依赖与脚本
+
+```
+
+---
+
+## 🤝 贡献 (Contributing)
+
+欢迎提交 Issue 或 Pull Request 来改进 StudyOS！
+
+1. Fork 本仓库
+2. 新建分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 提交 Pull Request
+
+---
+
+## 📄 开源协议 (License)
+
+[MIT License](https://www.google.com/search?q=LICENSE) © 2024 leeon666
+
+```
