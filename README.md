@@ -1,4 +1,4 @@
-# StudyOS Ultimate (V4.0)
+# StudyOS
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
