@@ -22,8 +22,10 @@
 ## 📸 截图预览 (Screenshots)
 
 <div align="center">
-  <img src="https://via.placeholder.com/600x400?text=StudyOS+App+Screenshot" alt="App Screenshot" width="80%">
+  <img width="2875" height="1691" alt="image" src="https://github.com/user-attachments/assets/b0d7c011-8991-4fbd-b754-0876d7e08b38" />
+  <img width="2879" height="1695" alt="image" src="https://github.com/user-attachments/assets/2e9b74f0-0f09-41c3-a7d3-5e007b94f09f" />
 </div>
+
 
 ---
 
