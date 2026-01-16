@@ -113,11 +113,3 @@ StudyOS/
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 提交 Pull Request
-
----
-
-## 📄 开源协议 (License)
-
-[MIT License](https://www.google.com/search?q=LICENSE) © 2024 leeon666
-
-```
