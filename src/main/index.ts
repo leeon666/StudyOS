@@ -1,5 +1,5 @@
 
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, webContents } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
@@ -15,6 +15,18 @@ function createWindow(): void {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.studymaster')
   app.on('browser-window-created', (_, window) => { optimizer.watchWindowShortcuts(window) })
+  
+  // 拦截所有 webContents 的新窗口请求
+  app.on('web-contents-created', (_, contents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      // 如果是 webview，在当前 webview 中导航而不是打开新窗口
+      if (contents.getType() === 'webview') {
+        contents.loadURL(url)
+      }
+      return { action: 'deny' }
+    })
+  })
+  
   createWindow()
   app.on('activate', function () { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })

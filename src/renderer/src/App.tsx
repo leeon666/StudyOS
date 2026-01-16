@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
-import { Trophy, Activity, BrainCircuit, ChevronDown, ChevronRight, Menu, Play, Pause, SkipForward, Settings, X, RotateCcw, Calendar, Clock, Flame, Target, TrendingUp, Plus, Edit2, Trash2, Lock, Coffee, GlassWater } from 'lucide-react'
+import { Trophy, Activity, BrainCircuit, ChevronDown, ChevronRight, Menu, Play, Pause, SkipForward, Settings, X, RotateCcw, Calendar, Clock, Flame, Target, TrendingUp, Plus, Edit2, Trash2, Lock, Coffee, GlassWater, Home, Search, ArrowLeft, ArrowRight, RotateCw, Zap, Award, Sun, BarChart3 } from 'lucide-react'
 import confetti from 'canvas-confetti'
 import './assets/main.css'
 
@@ -14,7 +14,26 @@ interface StudySession { date: string; timestamp: number; duration: number; task
 interface Achievement { id: string; title: string; desc: string; icon: string; rarity: 'common'|'rare'|'legendary'; condition: (t:number, s:StudySession[], c:number)=>boolean }
 interface AppSettings { pomoWork: number; pomoShort: number; pomoLong: number; waterReminder: boolean; forceLock: boolean; }
 
-const DEFAULT_TASKS: Task[] = [{ id: 1, title: '1. 计算机网络复习', links: [{ name: 'CS-Wiki', url: 'https://cs-wiki.cn/' }] }, { id: 2, title: '2. 英语阅读训练', links: [{ name: 'Economist', url: 'https://www.economist.com/' }] }]
+const DEFAULT_TASKS: Task[] = [
+  {
+    id: 1,
+    title: '1. 计算机网络复习',
+    links: [
+      { name: 'CS-Wiki', url: 'https://wiki.cs.vt.edu/index.php/Main_Page' },
+      { name: '计算机网络微课堂', url: 'https://www.bilibili.com/video/BV1c4411d7jb' }
+    ]
+  },
+  {
+    id: 2,
+    title: '2. 英语阅读训练',
+    links: [{ name: 'Economist', url: 'https://www.economist.com/' }]
+  },
+  {
+    id: 3,
+    title: '3. 流量语义调研',
+    links: [{ name: '谷歌学术', url: 'https://scholar.google.com/scholar?hl=zh-CN&as_sdt=0%2C5&q=Traffic+semantics&btnG=' }]
+  }
+]
 const DEFAULT_SETTINGS: AppSettings = { pomoWork: 25, pomoShort: 5, pomoLong: 15, waterReminder: true, forceLock: true }
 
 // --- 28 Achievements (Simplified for brevity but logic intact) ---
@@ -23,53 +42,199 @@ const ACHIEVEMENTS: Achievement[] = [
   { id: 'focus_2h', title: '心流状态', desc: '累计专注 2 小时', icon: '🌊', rarity: 'common', condition: (t) => t >= 7200 },
   { id: 'master_10h', title: '学识渊博', desc: '累计专注 10 小时', icon: '🎓', rarity: 'rare', condition: (t) => t >= 36000 },
   { id: 'god_100h', title: '登峰造极', desc: '累计专注 100 小时', icon: '👑', rarity: 'legendary', condition: (t) => t >= 360000 },
-  { id: 'night', title: '守夜人', desc: '凌晨 2-5 点学习', icon: '🦉', rarity: 'rare', condition: (_,s) => s.some(x=>new Date(x.timestamp).getHours()>=2 && new Date(x.timestamp).getHours()<5) }
+  { id: 'night', title: '守夜人', desc: '凌晨 2-5 点学习', icon: '🦉', rarity: 'rare', condition: (_,s) => s.some(x=>new Date(x.timestamp).getHours()>=2 && new Date(x.timestamp).getHours()<5) },
+
+  // --- 🆕 新增：时间习惯类 ---
+  {
+    id: 'early_bird', 
+    title: '早起的鸟儿', 
+    desc: '在清晨 5-8 点完成专注', 
+    icon: '🌅', 
+    rarity: 'common', 
+    condition: (_, s) => s.some(x => {
+      const h = new Date(x.timestamp).getHours();
+      return h >= 5 && h < 8;
+    }) 
+  },
+  { 
+    id: 'weekend_warrior', 
+    title: '周末战士', 
+    desc: '周六或周日坚持学习', 
+    icon: '🏖️', 
+    rarity: 'common', 
+    condition: (_, s) => s.some(x => {
+      const day = new Date(x.timestamp).getDay();
+      return day === 0 || day === 6; // 0 is Sunday, 6 is Saturday
+    }) 
+  },
+  { 
+    id: 'lunch_break', 
+    title: '午休时光', 
+    desc: '在 12-13 点期间专注', 
+    icon: '🍱', 
+    rarity: 'common', 
+    condition: (_, s) => s.some(x => new Date(x.timestamp).getHours() === 12) 
+  },
+
+  // --- 🆕 新增：专注强度类 (挑战单次时长) ---
+  { 
+    id: 'deep_dive', 
+    title: '深潜者', 
+    desc: '单次专注超过 45 分钟', 
+    icon: '🤿', 
+    rarity: 'rare', 
+    condition: (_, __, c) => c >= 45 * 60 
+  },
+  { 
+    id: 'iron_will', 
+    title: '钢铁意志', 
+    desc: '单次专注超过 90 分钟', 
+    icon: '🗿', 
+    rarity: 'legendary', 
+    condition: (_, __, c) => c >= 90 * 60 
+  },
+
+  // --- 🆕 新增：数量积累类 (搬砖) ---
+  { 
+    id: 'brick_layer', 
+    title: '搬砖工', 
+    desc: '累计完成 10 个番茄钟', 
+    icon: '🧱', 
+    rarity: 'common', 
+    condition: (_, s) => s.length >= 10 
+  },
+  { 
+    id: 'tower_builder', 
+    title: '高塔建造者', 
+    desc: '累计完成 50 个番茄钟', 
+    icon: '🏗️', 
+    rarity: 'rare', 
+    condition: (_, s) => s.length >= 50 
+  },
+  { 
+    id: 'city_architect', 
+    title: '城市架构师', 
+    desc: '累计完成 500 个番茄钟', 
+    icon: '🏙️', 
+    rarity: 'legendary', 
+    condition: (_, s) => s.length >= 500 
+  },
+
+  // --- 🆕 新增：趣味/隐藏类 ---
+  { 
+    id: 'midnight_oil', 
+    title: '零点钟声', 
+    desc: '跨越午夜 0 点的学习', 
+    icon: '🕛', 
+    rarity: 'rare', 
+    condition: (_, s) => s.some(x => new Date(x.timestamp).getHours() === 0) 
+  },
+  { 
+    id: 'friday_night', 
+    title: '狂欢夜?', 
+    desc: '周五晚上 20 点后还在学习', 
+    icon: '🍸', 
+    rarity: 'legendary', 
+    condition: (_, s) => s.some(x => {
+      const d = new Date(x.timestamp);
+      return d.getDay() === 5 && d.getHours() >= 20;
+    }) 
+  }
 ]
 
 // --- Stats Logic ---
 const calculateStats = (history: StudySession[], tasks: Task[]) => {
+  const now = new Date()
+  const todayStr = now.toISOString().split('T')[0]
   const totalSec = history.reduce((a, b) => a + b.duration, 0)
-  const todayStr = new Date().toISOString().split('T')[0]
   const todaySec = history.filter(h => h.date === todayStr).reduce((a, b) => a + b.duration, 0)
+
+  // 本周数据
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay())
+  const weekSec = history.filter(h => new Date(h.date) >= weekStart).reduce((a, b) => a + b.duration, 0)
+  
+  // 上周数据（用于对比）
+  const lastWeekStart = new Date(weekStart); lastWeekStart.setDate(lastWeekStart.getDate() - 7)
+  const lastWeekEnd = new Date(weekStart); lastWeekEnd.setDate(lastWeekEnd.getDate() - 1)
+  const lastWeekSec = history.filter(h => { const d = new Date(h.date); return d >= lastWeekStart && d <= lastWeekEnd }).reduce((a, b) => a + b.duration, 0)
+  const weekGrowth = lastWeekSec > 0 ? Math.round(((weekSec - lastWeekSec) / lastWeekSec) * 100) : 100
+
+  // 本月数据
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const monthSec = history.filter(h => new Date(h.date) >= monthStart).reduce((a, b) => a + b.duration, 0)
 
   // Streak
   const dates = Array.from(new Set(history.map(h => h.date))).sort()
-  let streak = 0
+  let streak = 0, maxStreak = 0
   if (dates.length > 0) {
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
     if (dates.includes(today) || dates.includes(yesterday)) {
       let d = new Date(dates.includes(today)?today:yesterday);
-      while(true) {
-        if(dates.includes(d.toISOString().split('T')[0])) { streak++; d.setDate(d.getDate()-1); } else break;
-      }
+      while(dates.includes(d.toISOString().split('T')[0])) { streak++; d.setDate(d.getDate()-1); }
     }
+    // 计算历史最长连续
+    let tempStreak = 1
+    for (let i = 1; i < dates.length; i++) {
+      const prev = new Date(dates[i-1]), curr = new Date(dates[i])
+      if ((curr.getTime() - prev.getTime()) === 86400000) { tempStreak++ } 
+      else { maxStreak = Math.max(maxStreak, tempStreak); tempStreak = 1 }
+    }
+    maxStreak = Math.max(maxStreak, tempStreak)
   }
 
+  // 学习效率评分 (基于多维度)
+  const avgDailyMin = dates.length > 0 ? Math.round(totalSec / 60 / dates.length) : 0
+  const consistencyScore = Math.min(100, Math.round((streak / 7) * 50 + (dates.length / 30) * 50))
+  const intensityScore = Math.min(100, Math.round((avgDailyMin / 120) * 100))
+  const efficiencyScore = Math.round((consistencyScore + intensityScore) / 2)
+  const efficiencyGrade = efficiencyScore >= 90 ? 'S' : efficiencyScore >= 80 ? 'A' : efficiencyScore >= 60 ? 'B' : efficiencyScore >= 40 ? 'C' : 'D'
+
+  // 最佳学习时段
+  const hourDist = new Array(24).fill(0); history.forEach(h => hourDist[new Date(h.timestamp).getHours()] += h.duration)
+  const peakHour = hourDist.indexOf(Math.max(...hourDist))
+  const peakPeriod = peakHour < 6 ? '深夜' : peakHour < 12 ? '上午' : peakHour < 18 ? '下午' : '晚上'
+
   // Trend (7 days)
-  const last7DaysLabels = [], last7DaysData = []
+  const last7DaysLabels: string[] = [], last7DaysData: number[] = []
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i); const s = d.toISOString().split('T')[0]
     last7DaysLabels.push(s.slice(5))
     last7DaysData.push(Math.floor(history.filter(h => h.date === s).reduce((a, b) => a + b.duration, 0) / 60))
   }
 
+  // 30天趋势
+  const last30DaysData: number[] = []
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i); const s = d.toISOString().split('T')[0]
+    last30DaysData.push(Math.floor(history.filter(h => h.date === s).reduce((a, b) => a + b.duration, 0) / 60))
+  }
+  const avg30Days = last30DaysData.length > 0 ? Math.round(last30DaysData.reduce((a,b)=>a+b,0) / 30) : 0
+
   // Distribution
   const taskMap = new Map<string, number>()
   history.forEach(h => { const t = tasks.find(x => x.id === h.taskId)?.title || '已删除'; taskMap.set(t, (taskMap.get(t)||0) + h.duration) })
 
   // Heatmap
-  const heatmap = []; const start = new Date(); start.setFullYear(start.getFullYear()-1);
+  const heatmap: {date: string, count: number, level: number}[] = []; const start = new Date(); start.setFullYear(start.getFullYear()-1);
   const dailyMap = new Map(); history.forEach(h => dailyMap.set(h.date, (dailyMap.get(h.date)||0)+h.duration));
   for(let d=new Date(start); d<=new Date(); d.setDate(d.getDate()+1)) {
     const k = d.toISOString().split('T')[0]; const v = dailyMap.get(k)||0;
     heatmap.push({ date: k, count: v, level: v>7200?4:v>3600?3:v>1800?2:v>0?1:0 })
   }
 
-  // Hour Dist
-  const hourDist = new Array(24).fill(0); history.forEach(h => hourDist[new Date(h.timestamp).getHours()] += h.duration);
+  // 学习天数统计
+  const totalDays = dates.length
+  const thisMonthDays = dates.filter(d => new Date(d) >= monthStart).length
 
-  return { totalSec, todaySec, streak, last7DaysLabels, last7DaysData, taskMap, heatmap, hourDist }
+  return { 
+    totalSec, todaySec, weekSec, monthSec, weekGrowth, lastWeekSec,
+    streak, maxStreak, totalDays, thisMonthDays,
+    efficiencyScore, efficiencyGrade, consistencyScore, intensityScore, avgDailyMin,
+    peakHour, peakPeriod, hourDist,
+    last7DaysLabels, last7DaysData, last30DaysData, avg30Days,
+    taskMap, heatmap 
+  }
 }
 
 // --- Modal Component ---
@@ -90,8 +255,11 @@ function App(): JSX.Element {
   const [view, setView] = useState<'browser'|'stats'|'achievements'>('browser')
   const [currentTask, setCurrentTask] = useState<number>(0)
   const [activeUrl, setActiveUrl] = useState('https://www.google.com')
+  const [urlInput, setUrlInput] = useState('https://www.google.com')
+  const HOME_URL = 'https://www.google.com'
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [expanded, setExpanded] = useState<number[]>([])
+  const webviewRef = useRef<any>(null)
 
   // Timer
   const [pomoMode, setPomoMode] = useState<'work'|'short'|'long'>('work')
@@ -100,7 +268,7 @@ function App(): JSX.Element {
   const [waterTimer, setWaterTimer] = useState(0)
 
   // Modals
-  const [modalType, setModalType] = useState<'task'|'link'|'settings'|null>(null)
+  const [modalType, setModalType] = useState<'task'|'link'|'settings'|'reset'|null>(null)
   const [editTask, setEditTask] = useState<Task|null>(null)
   const [editLink, setEditLink] = useState<{tid:number, idx:number|null, name:string, url:string}|null>(null)
   const [formInput, setFormInput] = useState({ f1: '', f2: '' })
@@ -115,6 +283,22 @@ function App(): JSX.Element {
     const sHist = localStorage.getItem('study_history'); if(sHist) setHistory(JSON.parse(sHist));
     const sAch = localStorage.getItem('study_achievements'); if(sAch) { setUnlocked(JSON.parse(sAch)); unlockedRef.current=JSON.parse(sAch); }
     const sSet = localStorage.getItem('study_settings'); if(sSet) setSettings(JSON.parse(sSet));
+  }, [])
+
+  // Webview new-window handler
+  useEffect(() => {
+    const wv = webviewRef.current
+    if (!wv) return
+    const handleNewWindow = (e: any) => { e.preventDefault(); setActiveUrl(e.url); setUrlInput(e.url) }
+    const handleNavigate = (e: any) => { setUrlInput(e.url) }
+    wv.addEventListener('new-window', handleNewWindow)
+    wv.addEventListener('did-navigate', handleNavigate)
+    wv.addEventListener('did-navigate-in-page', handleNavigate)
+    return () => {
+      wv.removeEventListener('new-window', handleNewWindow)
+      wv.removeEventListener('did-navigate', handleNavigate)
+      wv.removeEventListener('did-navigate-in-page', handleNavigate)
+    }
   }, [])
 
   // Timer Loop
@@ -186,7 +370,10 @@ function App(): JSX.Element {
 
       {/* Sidebar */}
       <div className={`sidebar ${!isSidebarOpen?'collapsed':''}`} style={{width:isSidebarOpen?320:0}}>
-        <div className="logo-area"><BrainCircuit /> STUDY OS <span style={{fontSize:10, opacity:0.5}}>ULTIMATE</span></div>
+        <div className="logo-area">
+          <div style={{display:'flex', alignItems:'center', gap:8}}><BrainCircuit /> STUDY OS <span style={{fontSize:10, opacity:0.5}}>ULTIMATE</span></div>
+          <button className="collapse-btn" onClick={()=>setIsSidebarOpen(false)}><ChevronRight size={16} style={{transform:'rotate(180deg)'}}/></button>
+        </div>
 
         {/* Pomo Card */}
         <div className={`pomo-card mode-${pomoMode}`}>
@@ -211,7 +398,7 @@ function App(): JSX.Element {
                   {expanded.includes(t.id)?<ChevronDown size={14}/>:<ChevronRight size={14}/>}
                 </div>
               </div>
-              <div className={`task-body ${expanded.includes(t.id)?'expanded':''}`}>
+              <div className={`task-body ${expanded.includes(t.id)?'expanded':''}`} onClick={e=>e.stopPropagation()}>
                 {t.links.map((l,i) => (
                   <div key={i} className="link-item">
                     <button className="nav-btn" onClick={()=>{setActiveUrl(l.url); setCurrentTask(t.id); setView('browser')}}>{l.name}</button>
@@ -232,41 +419,132 @@ function App(): JSX.Element {
           <button className="action-btn" onClick={()=>setView('stats')}><Activity size={16}/> 数据</button>
           <button className="action-btn" onClick={()=>setView('achievements')}><Trophy size={16}/> 成就</button>
           <button className="action-btn" onClick={()=>{setModalType('settings')}}><Settings size={16}/> 设置</button>
-          <button className="action-btn" onClick={()=>{if(confirm('Reset all data?')){localStorage.clear();window.location.reload()}}}><RotateCcw size={16}/></button>
+          <button className="action-btn" onClick={()=>setModalType('reset')}><RotateCcw size={16}/></button>
         </div>
       </div>
 
       <div className="main-area">
-        {!isSidebarOpen && <button style={{position:'absolute', top:20, left:20, zIndex:100, background:'#1e293b', color:'white', padding:8, borderRadius:6}} onClick={()=>setIsSidebarOpen(true)}><Menu/></button>}
+        {view === 'browser' && (
+          <div className="browser-toolbar">
+            {!isSidebarOpen && <button className="toolbar-btn" onClick={()=>setIsSidebarOpen(true)}><Menu size={16}/></button>}
+            <button className="toolbar-btn" onClick={()=>webviewRef.current?.goBack()}><ArrowLeft size={16}/></button>
+            <button className="toolbar-btn" onClick={()=>webviewRef.current?.goForward()}><ArrowRight size={16}/></button>
+            <button className="toolbar-btn" onClick={()=>webviewRef.current?.reload()}><RotateCw size={16}/></button>
+            <button className="toolbar-btn" onClick={()=>{setActiveUrl(HOME_URL); setUrlInput(HOME_URL)}}><Home size={16}/></button>
+            <form className="url-form" onSubmit={(e)=>{e.preventDefault(); const url = urlInput.startsWith('http') ? urlInput : `https://${urlInput}`; setActiveUrl(url); setUrlInput(url)}}>
+              <Search size={14} className="search-icon"/>
+              <input className="url-input" value={urlInput} onChange={e=>setUrlInput(e.target.value)} placeholder="输入网址或搜索"/>
+            </form>
+          </div>
+        )}
+        {!isSidebarOpen && view !== 'browser' && <button className="expand-btn" onClick={()=>setIsSidebarOpen(true)}><Menu size={16}/></button>}
 
-        <webview src={activeUrl} style={{display: view==='browser'?'flex':'none'}} />
+        <webview ref={webviewRef} src={activeUrl} style={{display: view==='browser'?'flex':'none', flex:1}} />
 
         {view === 'stats' && (
           <div className="dashboard-layer">
-            <div className="dash-header"><div className="dash-title"><Target /> 指挥官数据中心</div><button className="action-btn" style={{width:'auto'}} onClick={()=>setView('browser')}><X/> 关闭</button></div>
+            <div className="dash-header">
+              <div className="dash-title"><Target /> 学习数据中心</div>
+              <button className="close-btn" onClick={()=>setView('browser')}><X size={16}/> 关闭</button>
+            </div>
 
+            {/* 效率评分卡片 */}
+            <div className="score-card">
+              <div className="score-main">
+                <div className="score-ring">
+                  <svg viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="45" fill="none" stroke="#1e293b" strokeWidth="8"/>
+                    <circle cx="50" cy="50" r="45" fill="none" stroke={stats.efficiencyScore>=80?'#22c55e':stats.efficiencyScore>=60?'#38bdf8':'#f59e0b'} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${stats.efficiencyScore * 2.83} 283`} transform="rotate(-90 50 50)"/>
+                  </svg>
+                  <div className="score-value">{stats.efficiencyGrade}</div>
+                </div>
+                <div className="score-info">
+                  <div className="score-title">学习效率评分</div>
+                  <div className="score-num">{stats.efficiencyScore}<span>/100</span></div>
+                  <div className="score-bars">
+                    <div className="score-bar-item"><span>坚持度</span><div className="score-bar-bg"><div className="score-bar-fill" style={{width:`${stats.consistencyScore}%`, background:'#38bdf8'}}></div></div><span>{stats.consistencyScore}</span></div>
+                    <div className="score-bar-item"><span>强度</span><div className="score-bar-bg"><div className="score-bar-fill" style={{width:`${stats.intensityScore}%`, background:'#a78bfa'}}></div></div><span>{stats.intensityScore}</span></div>
+                  </div>
+                </div>
+              </div>
+              <div className="score-tips">
+                <div className="tip-item"><Sun size={14}/> 最佳时段：<strong>{stats.peakPeriod} {stats.peakHour}:00</strong></div>
+                <div className="tip-item"><BarChart3 size={14}/> 日均学习：<strong>{stats.avgDailyMin} 分钟</strong></div>
+              </div>
+            </div>
+
+            {/* 核心指标 */}
             <div className="metrics-grid">
-               <div className="metric-card"><div className="metric-label"><Clock size={14}/> 今日投入</div><div className="metric-value">{Math.floor(stats.todaySec/60)}m</div><div className="metric-sub">保持专注</div></div>
-               <div className="metric-card"><div className="metric-label"><Flame size={14}/> 连续连胜</div><div className="metric-value">{stats.streak}天</div><div className="metric-sub">不要断掉!</div></div>
-               <div className="metric-card"><div className="metric-label"><BrainCircuit size={14}/> 累计时长</div><div className="metric-value">{(stats.totalSec/3600).toFixed(1)}h</div><div className="metric-sub">积少成多</div></div>
-               <div className="metric-card"><div className="metric-label"><TrendingUp size={14}/> 效率指数</div><div className="metric-value">A+</div></div>
+              <div className="metric-card">
+                <div className="metric-icon" style={{background:'rgba(56,189,248,0.1)'}}><Clock size={20} color="#38bdf8"/></div>
+                <div className="metric-content">
+                  <div className="metric-label">今日投入</div>
+                  <div className="metric-value">{Math.floor(stats.todaySec/60)}<span>分钟</span></div>
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-icon" style={{background:'rgba(251,191,36,0.1)'}}><Flame size={20} color="#fbbf24"/></div>
+                <div className="metric-content">
+                  <div className="metric-label">连续学习</div>
+                  <div className="metric-value">{stats.streak}<span>天</span></div>
+                  <div className="metric-sub">最长 {stats.maxStreak} 天</div>
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-icon" style={{background:'rgba(34,197,94,0.1)'}}><Zap size={20} color="#22c55e"/></div>
+                <div className="metric-content">
+                  <div className="metric-label">本周学习</div>
+                  <div className="metric-value">{(stats.weekSec/3600).toFixed(1)}<span>小时</span></div>
+                  <div className={`metric-sub ${stats.weekGrowth>=0?'up':'down'}`}>{stats.weekGrowth>=0?'↑':'↓'} {Math.abs(stats.weekGrowth)}% vs上周</div>
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-icon" style={{background:'rgba(167,139,250,0.1)'}}><Award size={20} color="#a78bfa"/></div>
+                <div className="metric-content">
+                  <div className="metric-label">累计学习</div>
+                  <div className="metric-value">{(stats.totalSec/3600).toFixed(1)}<span>小时</span></div>
+                  <div className="metric-sub">{stats.totalDays} 天</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 图表区域 */}
+            <div className="charts-split">
+              <div className="chart-container">
+                <div className="chart-header">
+                  <span>📈 近7天趋势</span>
+                  <span className="chart-avg">日均 {Math.round(stats.last7DaysData.reduce((a,b)=>a+b,0)/7)} 分钟</span>
+                </div>
+                <div style={{flex:1}}><Line data={{labels:stats.last7DaysLabels, datasets:[{data:stats.last7DaysData, borderColor:'#38bdf8', fill:true, backgroundColor:'rgba(56,189,248,0.1)', tension:0.4, pointRadius:4, pointBackgroundColor:'#38bdf8'}]}} options={chartOpts} /></div>
+              </div>
+              <div className="chart-container">
+                <div className="chart-header">🎯 任务分布</div>
+                <div style={{flex:1}}><Doughnut data={{labels:Array.from(stats.taskMap.keys()), datasets:[{data:Array.from(stats.taskMap.values()).map(v=>Math.floor(v/60)), backgroundColor:['#38bdf8','#f472b6','#fbbf24','#a78bfa','#22c55e'], borderWidth:0, hoverOffset:8}]}} options={{plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',boxWidth:10,padding:15}}}}} /></div>
+              </div>
             </div>
 
             <div className="charts-split">
-               <div className="chart-container"><div className="chart-header">近7天趋势</div><div style={{flex:1}}><Line data={{labels:stats.last7DaysLabels, datasets:[{data:stats.last7DaysData, borderColor:'#38bdf8', fill:true, backgroundColor:'rgba(56,189,248,0.1)'}]}} options={chartOpts} /></div></div>
-               <div className="chart-container"><div className="chart-header">投入占比</div><div style={{flex:1}}><Doughnut data={{labels:Array.from(stats.taskMap.keys()), datasets:[{data:Array.from(stats.taskMap.values()).map(v=>Math.floor(v/60)), backgroundColor:['#38bdf8','#f472b6','#fbbf24','#a78bfa'], borderWidth:0}]}} options={{plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',boxWidth:10}}}}} /></div></div>
-            </div>
-
-            <div className="charts-split">
-               <div className="chart-container"><div className="chart-header">24小时效率分布</div><div style={{flex:1}}><Bar data={{labels:Array.from({length:24},(_,i)=>i), datasets:[{data:stats.hourDist.map(v=>Math.floor(v/60)), backgroundColor:'#6366f1', borderRadius:4}]}} options={chartOpts} /></div></div>
-               <div className="heatmap-container" style={{flex:1, marginBottom:0}}><div className="chart-header"><Calendar size={14}/> 年度热力图</div><div className="heatmap-grid">{stats.heatmap.map((d,i)=><div key={i} className={`hm-cell l-${d.level}`} title={`${d.date}: ${Math.floor(d.count/60)}m`}></div>)}</div></div>
+              <div className="chart-container">
+                <div className="chart-header">
+                  <span>⏰ 24小时活跃分布</span>
+                  <span className="chart-avg">高峰 {stats.peakHour}:00</span>
+                </div>
+                <div style={{flex:1}}><Bar data={{labels:Array.from({length:24},(_,i)=>`${i}时`), datasets:[{data:stats.hourDist.map(v=>Math.floor(v/60)), backgroundColor:stats.hourDist.map((_,i)=>i===stats.peakHour?'#38bdf8':'#334155'), borderRadius:4, hoverBackgroundColor:'#38bdf8'}]}} options={chartOpts} /></div>
+              </div>
+              <div className="heatmap-container">
+                <div className="chart-header">
+                  <span><Calendar size={14}/> 年度热力图</span>
+                  <div className="heatmap-legend"><span>少</span><div className="hm-cell l-1"></div><div className="hm-cell l-2"></div><div className="hm-cell l-3"></div><div className="hm-cell l-4"></div><span>多</span></div>
+                </div>
+                <div className="heatmap-grid">{stats.heatmap.map((d,i)=><div key={i} className={`hm-cell l-${d.level}`} title={`${d.date}: ${Math.floor(d.count/60)}分钟`}></div>)}</div>
+              </div>
             </div>
           </div>
         )}
 
         {view === 'achievements' && (
           <div className="dashboard-layer">
-            <div className="dash-header"><div className="dash-title"><Trophy/> 荣誉殿堂</div><button className="action-btn" style={{width:'auto'}} onClick={()=>setView('browser')}><X/></button></div>
+            <div className="dash-header"><div className="dash-title"><Trophy size={24}/> 荣誉殿堂</div><button className="close-btn" onClick={()=>setView('browser')}><X size={16}/> 关闭</button></div>
             <div className="ach-grid">
               {ACHIEVEMENTS.map(a => {
                 const un = unlocked.includes(a.id);
@@ -292,6 +570,13 @@ function App(): JSX.Element {
       <Modal isOpen={modalType==='settings'} title="设置" onClose={()=>setModalType(null)}>
          <div className="form-group"><label className="form-label">专注时长 (分)</label><input type="number" className="form-input" value={settings.pomoWork} onChange={e=>setSettings({...settings, pomoWork:parseInt(e.target.value)})}/></div>
          <div className="modal-actions"><button className="btn btn-primary" onClick={()=>{localStorage.setItem('study_settings', JSON.stringify(settings)); setModalType(null)}}>保存</button></div>
+      </Modal>
+      <Modal isOpen={modalType==='reset'} title="重置数据" onClose={()=>setModalType(null)}>
+         <div style={{color:'#94a3b8', marginBottom:20}}>确定要重置所有数据吗？这将清除所有任务、学习记录和成就，此操作不可撤销。</div>
+         <div className="modal-actions">
+           <button className="btn btn-secondary" onClick={()=>setModalType(null)}>取消</button>
+           <button className="btn" style={{background:'#ef4444', color:'white'}} onClick={()=>{localStorage.clear();window.location.reload()}}>确定重置</button>
+         </div>
       </Modal>
 
       {/* Alerts & Toasts */}
