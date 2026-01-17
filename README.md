@@ -54,10 +54,20 @@
 <div align="center">
 
 ### 主界面 - 任务管理
-<img width="2875" height="1691" alt="主界面" src="https://github.com/user-attachments/assets/b0d7c011-8991-4fbd-b754-0876d7e08b38" />
+<img width="2879" height="1696" alt="image" src="https://github.com/user-attachments/assets/f8c0db31-97d1-4dd2-9135-6bfdabbe9647" />
+
 
 ### 数据统计中心
-<img width="2879" height="1695" alt="数据统计" src="https://github.com/user-attachments/assets/2e9b74f0-0f09-41c3-a7d3-5e007b94f09f" />
+<img width="2879" height="1691" alt="image" src="https://github.com/user-attachments/assets/eb4165cc-0105-438a-abcc-44170df81b12" />
+
+### 笔记本管理
+<img width="2879" height="1698" alt="image" src="https://github.com/user-attachments/assets/24d99057-35af-4098-bc84-b7495c134429" />
+
+### 成就系统
+<img width="2879" height="1700" alt="image" src="https://github.com/user-attachments/assets/af55ae6e-f16a-4f4e-b352-73b2771fb3f3" />
+
+### 暗夜模式
+<img width="2879" height="1696" alt="image" src="https://github.com/user-attachments/assets/9d444af1-27da-494d-9921-e027755db0c9" />
 
 </div>
 
