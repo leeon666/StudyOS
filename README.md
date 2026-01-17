@@ -217,30 +217,11 @@ StudyOS/
 - 🎵 Steam 风格成就音效
 - 🌓 白天/暗夜主题切换
 - 🔄 任务和链接拖拽排序
-- 🌐 网页翻译功能
 
 **优化改进**
 - 🎨 优化 UI 布局和交互
 - ⚡ 提升应用性能
 - 🐛 修复多个已知 bug
-
----
-
-## 📄 许可证 (License)
-
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
-
----
-
-## 🙏 致谢 (Acknowledgments)
-
-感谢以下开源项目：
-
-- [Electron](https://www.electronjs.org/)
-- [React](https://react.dev/)
-- [Vite](https://vitejs.dev/)
-- [Chart.js](https://www.chartjs.org/)
-- [Lucide Icons](https://lucide.dev/)
 
 ---
 
