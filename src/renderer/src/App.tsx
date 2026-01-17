@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
-import { Trophy, Activity, BrainCircuit, ChevronDown, ChevronRight, Menu, Play, Pause, SkipForward, Settings, X, RotateCcw, Calendar, Clock, Flame, Target, TrendingUp, Plus, Edit2, Trash2, Lock, Coffee, GlassWater, Home, Search, ArrowLeft, ArrowRight, RotateCw, Zap, Award, Sun, BarChart3 } from 'lucide-react'
+import { Trophy, Activity, BrainCircuit, ChevronDown, ChevronRight, Menu, Play, Pause, SkipForward, Settings, X, RotateCcw, Calendar, Clock, Flame, Target, TrendingUp, Plus, Edit2, Trash2, Lock, Coffee, GlassWater, Home, Search, ArrowLeft, ArrowRight, RotateCw, Zap, Award, Sun, BarChart3, Languages, StickyNote, Pin, Minimize2, Maximize2, Book, FileText, Eye, Code } from 'lucide-react'
 import confetti from 'canvas-confetti'
+import { marked } from 'marked'
 import './assets/main.css'
+import achievementSound from './assets/sounds/achievement.wav'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Legend, Filler)
 
@@ -12,7 +14,10 @@ interface TaskLink { name: string; url: string }
 interface Task { id: number; title: string; links: TaskLink[] }
 interface StudySession { date: string; timestamp: number; duration: number; taskId: number }
 interface Achievement { id: string; title: string; desc: string; icon: string; rarity: 'common'|'rare'|'legendary'; condition: (t:number, s:StudySession[], c:number)=>boolean }
-interface AppSettings { pomoWork: number; pomoShort: number; pomoLong: number; waterReminder: boolean; forceLock: boolean; }
+interface AppSettings { pomoWork: number; pomoShort: number; pomoLong: number; waterReminder: boolean; forceLock: boolean; theme: 'dark' | 'light'; }
+interface Notebook { id: number; name: string; createdAt: number; }
+interface NotePage { id: number; notebookId: number; title: string; content: string; createdAt: number; updatedAt: number; }
+interface NoteWindow { id: number; pageId: number; x: number; y: number; width: number; height: number; opacity: number; alwaysOnTop: boolean; viewMode: 'edit' | 'preview' | 'split'; }
 
 const DEFAULT_TASKS: Task[] = [
   {
@@ -34,7 +39,7 @@ const DEFAULT_TASKS: Task[] = [
     links: [{ name: '谷歌学术', url: 'https://scholar.google.com/scholar?hl=zh-CN&as_sdt=0%2C5&q=Traffic+semantics&btnG=' }]
   }
 ]
-const DEFAULT_SETTINGS: AppSettings = { pomoWork: 25, pomoShort: 5, pomoLong: 15, waterReminder: true, forceLock: true }
+const DEFAULT_SETTINGS: AppSettings = { pomoWork: 25, pomoShort: 5, pomoLong: 15, waterReminder: true, forceLock: true, theme: 'dark' }
 
 // --- 28 Achievements (Simplified for brevity but logic intact) ---
 const ACHIEVEMENTS: Achievement[] = [
@@ -250,9 +255,15 @@ function App(): JSX.Element {
   const [unlocked, setUnlocked] = useState<string[]>([])
   const unlockedRef = useRef<string[]>([])
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
+  
+  // Notes
+  const [notebooks, setNotebooks] = useState<Notebook[]>([])
+  const [notePages, setNotePages] = useState<NotePage[]>([])
+  const [noteWindows, setNoteWindows] = useState<NoteWindow[]>([])
+  const [selectedNotebook, setSelectedNotebook] = useState<number | null>(null)
 
   // UI
-  const [view, setView] = useState<'browser'|'stats'|'achievements'>('browser')
+  const [view, setView] = useState<'browser'|'stats'|'achievements'|'notes'>('browser')
   const [currentTask, setCurrentTask] = useState<number>(0)
   const [activeUrl, setActiveUrl] = useState('https://www.google.com')
   const [urlInput, setUrlInput] = useState('https://www.google.com')
@@ -264,6 +275,8 @@ function App(): JSX.Element {
   // Drag & Drop
   const [draggedTask, setDraggedTask] = useState<number | null>(null)
   const [dragOverTask, setDragOverTask] = useState<number | null>(null)
+  const [draggedLink, setDraggedLink] = useState<{taskId: number, linkIdx: number} | null>(null)
+  const [dragOverLink, setDragOverLink] = useState<{taskId: number, linkIdx: number} | null>(null)
 
   // Timer
   const [pomoMode, setPomoMode] = useState<'work'|'short'|'long'>('work')
@@ -272,10 +285,11 @@ function App(): JSX.Element {
   const [waterTimer, setWaterTimer] = useState(0)
 
   // Modals
-  const [modalType, setModalType] = useState<'task'|'link'|'settings'|'reset'|null>(null)
+  const [modalType, setModalType] = useState<'task'|'link'|'settings'|'reset'|'notebook'|'renamePage'|null>(null)
   const [editTask, setEditTask] = useState<Task|null>(null)
   const [editLink, setEditLink] = useState<{tid:number, idx:number|null, name:string, url:string}|null>(null)
   const [formInput, setFormInput] = useState({ f1: '', f2: '' })
+  const [editingPageId, setEditingPageId] = useState<number | null>(null)
 
   // Toast & Alert
   const [toast, setToast] = useState<Achievement|null>(null)
@@ -287,7 +301,22 @@ function App(): JSX.Element {
     const sHist = localStorage.getItem('study_history'); if(sHist) setHistory(JSON.parse(sHist));
     const sAch = localStorage.getItem('study_achievements'); if(sAch) { setUnlocked(JSON.parse(sAch)); unlockedRef.current=JSON.parse(sAch); }
     const sSet = localStorage.getItem('study_settings'); if(sSet) setSettings(JSON.parse(sSet));
+    
+    // 加载笔记本和笔记页
+    const sNotebooks = localStorage.getItem('study_notebooks'); 
+    if(sNotebooks) {
+      const nb = JSON.parse(sNotebooks)
+      setNotebooks(nb)
+      if(nb.length > 0) setSelectedNotebook(nb[0].id)
+    }
+    const sNotePages = localStorage.getItem('study_note_pages'); if(sNotePages) setNotePages(JSON.parse(sNotePages));
+    const sNoteWins = localStorage.getItem('study_note_windows'); if(sNoteWins) setNoteWindows(JSON.parse(sNoteWins));
   }, [])
+
+  // 主题切换效果
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', settings.theme)
+  }, [settings.theme])
 
   // Webview new-window handler
   useEffect(() => {
@@ -351,7 +380,16 @@ function App(): JSX.Element {
     if (pomoMode === 'work') { setPomoMode('short'); setTimeLeft(settings.pomoShort*60); confetti(); }
     else { setPomoMode('work'); setTimeLeft(settings.pomoWork*60); }
   }
-  const triggerToast = (ach: Achievement) => { setToast(ach); setTimeout(()=>setToast(null), 5000); confetti() }
+  const triggerToast = (ach: Achievement) => { 
+    setToast(ach); 
+    setTimeout(()=>setToast(null), 5000); 
+    confetti();
+    
+    // 播放成就音效
+    const audio = new Audio(achievementSound);
+    audio.volume = 0.5;
+    audio.play().catch(err => console.log('音频播放失败:', err));
+  }
   const triggerAlert = (t: string, i: any) => { setAlertMsg({title:t, icon:i}); setTimeout(()=>setAlertMsg(null), 10000) }
 
   // CRUD
@@ -408,6 +446,227 @@ function App(): JSX.Element {
     setDragOverTask(null)
   }
 
+  // Link Drag & Drop handlers
+  const handleLinkDragStart = (e: React.DragEvent, taskId: number, linkIdx: number) => {
+    e.stopPropagation()
+    setDraggedLink({ taskId, linkIdx })
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  
+  const handleLinkDragOver = (e: React.DragEvent, taskId: number, linkIdx: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    
+    if (!draggedLink || (draggedLink.taskId === taskId && draggedLink.linkIdx === linkIdx)) return
+    setDragOverLink({ taskId, linkIdx })
+  }
+  
+  const handleLinkDrop = (e: React.DragEvent, targetTaskId: number, targetLinkIdx: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (!draggedLink) return
+    
+    // 只支持同一个任务内的链接拖拽
+    if (draggedLink.taskId !== targetTaskId) {
+      setDraggedLink(null)
+      setDragOverLink(null)
+      return
+    }
+    
+    const newTasks = tasks.map(t => {
+      if (t.id === targetTaskId) {
+        const newLinks = [...t.links]
+        const [removed] = newLinks.splice(draggedLink.linkIdx, 1)
+        newLinks.splice(targetLinkIdx, 0, removed)
+        return { ...t, links: newLinks }
+      }
+      return t
+    })
+    
+    saveTasks(newTasks)
+    setDraggedLink(null)
+    setDragOverLink(null)
+  }
+  
+  const handleLinkDragEnd = () => {
+    setDraggedLink(null)
+    setDragOverLink(null)
+  }
+
+  // 翻译功能 - 使用 Bing 翻译（无域名限制）
+  const handleTranslate = () => {
+    const wv = webviewRef.current
+    if (!wv) return
+    
+    try {
+      const currentUrl = wv.getURL()
+      // 使用 Bing 翻译
+      const translateUrl = `https://www.bing.com/translator?from=en&to=zh-Hans&text=${encodeURIComponent(currentUrl)}`
+      
+      // 或者使用有道翻译
+      // const translateUrl = `https://fanyi.youdao.com/translate?&doctype=json&type=AUTO&i=${encodeURIComponent(currentUrl)}`
+      
+      setActiveUrl(translateUrl)
+      setUrlInput(translateUrl)
+    } catch (err) {
+      console.error('Translation failed:', err)
+    }
+  }
+
+  // 笔记本功能
+  const saveNotebooks = (newNotebooks: Notebook[]) => {
+    setNotebooks(newNotebooks)
+    localStorage.setItem('study_notebooks', JSON.stringify(newNotebooks))
+  }
+  
+  const saveNotePages = (newPages: NotePage[]) => {
+    setNotePages(newPages)
+    localStorage.setItem('study_note_pages', JSON.stringify(newPages))
+  }
+  
+  const saveNoteWindows = (newWindows: NoteWindow[]) => {
+    setNoteWindows(newWindows)
+    localStorage.setItem('study_note_windows', JSON.stringify(newWindows))
+  }
+  
+  const createNotebook = () => {
+    setFormInput({ f1: '新笔记本', f2: '' })
+    setModalType('notebook')
+  }
+  
+  const handleSaveNotebook = () => {
+    if (!formInput.f1 || !formInput.f1.trim()) return
+    
+    const newNotebook: Notebook = {
+      id: Date.now(),
+      name: formInput.f1.trim(),
+      createdAt: Date.now()
+    }
+    saveNotebooks([...notebooks, newNotebook])
+    setSelectedNotebook(newNotebook.id)
+    setModalType(null)
+  }
+  
+  const createNotePage = (notebookId: number) => {
+    const newPage: NotePage = {
+      id: Date.now(),
+      notebookId,
+      title: '新笔记',
+      content: '# 新笔记\n\n开始写点什么...',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+    saveNotePages([...notePages, newPage])
+    openNoteWindow(newPage.id)
+  }
+  
+  const openNoteWindow = (pageId: number) => {
+    console.log('Opening note window for page:', pageId)
+    // 检查是否已经打开
+    if (noteWindows.some(w => w.pageId === pageId)) {
+      console.log('Window already open for this page')
+      return
+    }
+    
+    const newWindow: NoteWindow = {
+      id: Date.now(),
+      pageId,
+      x: 100 + noteWindows.length * 30,
+      y: 100 + noteWindows.length * 30,
+      width: 600,
+      height: 500,
+      opacity: 0.95,
+      alwaysOnTop: false,
+      viewMode: 'split'
+    }
+    
+    saveNoteWindows([...noteWindows, newWindow])
+  }
+  
+  const closeNoteWindow = (windowId: number) => {
+    saveNoteWindows(noteWindows.filter(w => w.id !== windowId))
+  }
+  
+  const updateNoteWindow = (windowId: number, updates: Partial<NoteWindow>) => {
+    const newWindows = noteWindows.map(w => 
+      w.id === windowId ? { ...w, ...updates } : w
+    )
+    saveNoteWindows(newWindows)
+  }
+  
+  const updateNotePage = (pageId: number, updates: Partial<NotePage>) => {
+    const newPages = notePages.map(p => 
+      p.id === pageId ? { ...p, ...updates, updatedAt: Date.now() } : p
+    )
+    saveNotePages(newPages)
+  }
+  
+  // 移除 IPC 监听
+  /*
+  useEffect(() => {
+    const { ipcRenderer } = window.require('electron')
+    
+    ipcRenderer.on('note-window-closed', (_, windowId) => {
+      console.log('Main app: note window closed', windowId)
+      saveNoteWindows(noteWindows.filter(w => w.id !== windowId))
+    })
+    
+    // 响应笔记窗口的数据请求
+    ipcRenderer.on('request-note-data', (_, windowId) => {
+      console.log('Main app: received request for note data', windowId)
+      const win = noteWindows.find(w => w.id === windowId)
+      console.log('Found window:', win)
+      if (win) {
+        const page = notePages.find(p => p.id === win.pageId)
+        console.log('Found page:', page)
+        if (page) {
+          console.log('Sending note data to window', windowId)
+          ipcRenderer.send('update-note-data', {
+            windowId: win.id,
+            page,
+            window: win
+          })
+        }
+      }
+    })
+    
+    // 接收来自笔记窗口的页面更新
+    ipcRenderer.on('update-note-page-from-window', (_, page) => {
+      console.log('Main app: received page update from window', page)
+      const newPages = notePages.map(p => 
+        p.id === page.id ? page : p
+      )
+      saveNotePages(newPages)
+    })
+    
+    return () => {
+      ipcRenderer.removeAllListeners('note-window-closed')
+      ipcRenderer.removeAllListeners('request-note-data')
+      ipcRenderer.removeAllListeners('update-note-page-from-window')
+    }
+  */
+  
+  const deleteNotebook = (notebookId: number) => {
+    if (!confirm('确定删除这个笔记本吗？其中的所有笔记也会被删除。')) return
+    saveNotebooks(notebooks.filter(n => n.id !== notebookId))
+    saveNotePages(notePages.filter(p => p.notebookId !== notebookId))
+    saveNoteWindows(noteWindows.filter(w => {
+      const page = notePages.find(p => p.id === w.pageId)
+      return page && page.notebookId !== notebookId
+    }))
+    if (selectedNotebook === notebookId) {
+      setSelectedNotebook(notebooks.length > 1 ? notebooks.find(n => n.id !== notebookId)?.id || null : null)
+    }
+  }
+  
+  const deleteNotePage = (pageId: number) => {
+    if (!confirm('确定删除这个笔记吗？')) return
+    saveNotePages(notePages.filter(p => p.id !== pageId))
+    saveNoteWindows(noteWindows.filter(w => w.pageId !== pageId))
+  }
+
   const stats = calculateStats(history, tasks)
   const chartOpts = { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false}}, y:{display:false}} }
 
@@ -454,15 +713,25 @@ function App(): JSX.Element {
                 </div>
               </div>
               <div className={`task-body ${expanded.includes(t.id)?'expanded':''}`} onClick={e=>e.stopPropagation()}>
-                {t.links.map((l,i) => (
-                  <div key={i} className="link-item">
-                    <button className="nav-btn" onClick={()=>{setActiveUrl(l.url); setCurrentTask(t.id); setView('browser')}}>{l.name}</button>
-                    <div className="link-actions">
-                      <div className="icon-btn" onClick={()=>{setEditLink({tid:t.id, idx:i, name:l.name, url:l.url}); setFormInput({f1:l.name, f2:l.url}); setModalType('link')}}><Edit2 size={10}/></div>
-                      <div className="icon-btn danger" onClick={()=>{const nt=tasks.map(x=>{if(x.id===t.id) x.links.splice(i,1); return x}); saveTasks(nt)}}><X size={10}/></div>
+                <div className="links-grid">
+                  {t.links.map((l,i) => (
+                    <div 
+                      key={i} 
+                      className={`link-item ${draggedLink?.taskId===t.id && draggedLink?.linkIdx===i?'dragging':''} ${dragOverLink?.taskId===t.id && dragOverLink?.linkIdx===i?'drag-over':''}`}
+                      draggable
+                      onDragStart={(e) => handleLinkDragStart(e, t.id, i)}
+                      onDragOver={(e) => handleLinkDragOver(e, t.id, i)}
+                      onDrop={(e) => handleLinkDrop(e, t.id, i)}
+                      onDragEnd={handleLinkDragEnd}
+                    >
+                      <button className="nav-btn" onClick={()=>{setActiveUrl(l.url); setCurrentTask(t.id); setView('browser')}}>{l.name}</button>
+                      <div className="link-actions">
+                        <div className="icon-btn" onClick={()=>{setEditLink({tid:t.id, idx:i, name:l.name, url:l.url}); setFormInput({f1:l.name, f2:l.url}); setModalType('link')}}><Edit2 size={10}/></div>
+                        <div className="icon-btn danger" onClick={()=>{const nt=tasks.map(x=>{if(x.id===t.id) x.links.splice(i,1); return x}); saveTasks(nt)}}><X size={10}/></div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
                 <button className="add-btn" onClick={()=>{setEditLink({tid:t.id, idx:null, name:'', url:''}); setFormInput({f1:'', f2:''}); setModalType('link')}}><Plus size={12}/> Add Link</button>
               </div>
             </div>
@@ -473,6 +742,7 @@ function App(): JSX.Element {
         <div className="bottom-bar">
           <button className="action-btn" onClick={()=>setView('stats')}><Activity size={16}/> 数据</button>
           <button className="action-btn" onClick={()=>setView('achievements')}><Trophy size={16}/> 成就</button>
+          <button className="action-btn" onClick={()=>setView('notes')}><StickyNote size={16}/> 笔记</button>
           <button className="action-btn" onClick={()=>{setModalType('settings')}}><Settings size={16}/> 设置</button>
           <button className="action-btn" onClick={()=>setModalType('reset')}><RotateCcw size={16}/></button>
         </div>
@@ -486,6 +756,7 @@ function App(): JSX.Element {
             <button className="toolbar-btn" onClick={()=>webviewRef.current?.goForward()}><ArrowRight size={16}/></button>
             <button className="toolbar-btn" onClick={()=>webviewRef.current?.reload()}><RotateCw size={16}/></button>
             <button className="toolbar-btn" onClick={()=>{setActiveUrl(HOME_URL); setUrlInput(HOME_URL)}}><Home size={16}/></button>
+            <button className="toolbar-btn translate-btn" onClick={handleTranslate} title="翻译此页面（Bing）"><Languages size={16}/></button>
             <form className="url-form" onSubmit={(e)=>{e.preventDefault(); const url = urlInput.startsWith('http') ? urlInput : `https://${urlInput}`; setActiveUrl(url); setUrlInput(url)}}>
               <Search size={14} className="search-icon"/>
               <input className="url-input" value={urlInput} onChange={e=>setUrlInput(e.target.value)} placeholder="输入网址或搜索"/>
@@ -615,6 +886,131 @@ function App(): JSX.Element {
             </div>
           </div>
         )}
+
+        {view === 'notes' && (
+          <div className="dashboard-layer">
+            <div className="dash-header">
+              <div className="dash-title"><Book size={24}/> 笔记本管理</div>
+              <button className="close-btn" onClick={()=>setView('browser')}><X size={16}/> 关闭</button>
+            </div>
+            <div style={{display:'flex', gap:20, height:'calc(100% - 80px)'}}>
+              {/* 左侧：笔记本列表 */}
+              <div style={{width:250, display:'flex', flexDirection:'column', background:'var(--card-bg)', borderRadius:12, padding:20, border:'1px solid var(--border)'}}>
+                <div style={{marginBottom:15}}>
+                  <button className="btn btn-primary" style={{width:'100%'}} onClick={createNotebook}>
+                    <Book size={14}/> 新建笔记本
+                  </button>
+                </div>
+                <div style={{flex:1, overflowY:'auto'}}>
+                  {notebooks.length === 0 ? (
+                    <div style={{textAlign:'center', padding:40, color:'var(--text-secondary)'}}>
+                      <Book size={48} style={{opacity:0.3, marginBottom:10}}/>
+                      <div style={{fontSize:12}}>还没有笔记本</div>
+                    </div>
+                  ) : (
+                    notebooks.map(nb => (
+                      <div 
+                        key={nb.id} 
+                        className={`notebook-item ${selectedNotebook===nb.id?'active':''}`}
+                        onClick={()=>setSelectedNotebook(nb.id)}
+                      >
+                        <Book size={16}/>
+                        <span style={{flex:1}}>{nb.name}</span>
+                        <button 
+                          className="icon-btn danger" 
+                          onClick={(e)=>{e.stopPropagation(); deleteNotebook(nb.id)}}
+                        >
+                          <Trash2 size={12}/>
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              
+              {/* 右侧：笔记页列表 */}
+              <div style={{flex:1, display:'flex', flexDirection:'column', background:'var(--card-bg)', borderRadius:12, padding:20, border:'1px solid var(--border)', minWidth:0}}>
+                {selectedNotebook ? (
+                  <>
+                    <div style={{marginBottom:15, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <h3 style={{margin:0, fontSize:16, color:'var(--text-primary)'}}>
+                        {notebooks.find(n => n.id === selectedNotebook)?.name}
+                      </h3>
+                      <button 
+                        className="btn btn-primary" 
+                        onClick={()=>createNotePage(selectedNotebook)}
+                      >
+                        <Plus size={14}/> 新建笔记页
+                      </button>
+                    </div>
+                    <div style={{flex:1, overflowY:'auto'}}>
+                      {notePages.filter(p => p.notebookId === selectedNotebook).length === 0 ? (
+                        <div style={{textAlign:'center', padding:60, color:'var(--text-secondary)'}}>
+                          <FileText size={64} style={{opacity:0.3, marginBottom:15}}/>
+                          <div style={{fontSize:14}}>这个笔记本还没有笔记页</div>
+                          <div style={{fontSize:12, marginTop:8}}>点击上方按钮创建第一个笔记</div>
+                        </div>
+                      ) : (
+                        <div className="note-pages-list">
+                          {notePages.filter(p => p.notebookId === selectedNotebook).map(page => {
+                            const isOpen = noteWindows.some(w => w.pageId === page.id)
+                            return (
+                              <div key={page.id} className="note-page-item">
+                                <div className="note-page-info" onClick={()=>{
+                                  console.log('Clicked on note page:', page.id)
+                                  openNoteWindow(page.id)
+                                }}>
+                                  <FileText size={16}/>
+                                  <div style={{flex:1, minWidth:0}}>
+                                    <div className="note-page-title">{page.title}</div>
+                                    <div className="note-page-preview">{page.content.substring(0, 80)}{page.content.length > 80 ? '...' : ''}</div>
+                                    <div className="note-page-time">
+                                      {new Date(page.updatedAt).toLocaleString('zh-CN', {
+                                        year: 'numeric',
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </div>
+                                  </div>
+                                  {isOpen && <span className="note-status-badge">已打开</span>}
+                                </div>
+                                <div className="note-page-actions">
+                                  <button 
+                                    className="icon-btn" 
+                                    onClick={()=>{
+                                      setEditingPageId(page.id)
+                                      setFormInput({ f1: page.title, f2: '' })
+                                      setModalType('renamePage')
+                                    }}
+                                  >
+                                    <Edit2 size={12}/>
+                                  </button>
+                                  <button className="icon-btn danger" onClick={()=>deleteNotePage(page.id)}>
+                                    <Trash2 size={12}/>
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-secondary)'}}>
+                    <div style={{textAlign:'center'}}>
+                      <Book size={64} style={{opacity:0.3, marginBottom:15}}/>
+                      <div style={{fontSize:16, marginBottom:8}}>请先创建或选择一个笔记本</div>
+                      <div style={{fontSize:13}}>笔记本可以帮助你分类管理笔记</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -628,7 +1024,16 @@ function App(): JSX.Element {
          <div className="modal-actions"><button className="btn btn-primary" onClick={handleSaveLink}>保存</button></div>
       </Modal>
       <Modal isOpen={modalType==='settings'} title="设置" onClose={()=>setModalType(null)}>
+         <div className="form-group">
+           <label className="form-label">主题模式</label>
+           <select className="form-input" value={settings.theme} onChange={e=>setSettings({...settings, theme:e.target.value as 'dark'|'light'})}>
+             <option value="dark">暗夜模式</option>
+             <option value="light">白天模式</option>
+           </select>
+         </div>
          <div className="form-group"><label className="form-label">专注时长 (分)</label><input type="number" className="form-input" value={settings.pomoWork} onChange={e=>setSettings({...settings, pomoWork:parseInt(e.target.value)})}/></div>
+         <div className="form-group"><label className="form-label">短休息 (分)</label><input type="number" className="form-input" value={settings.pomoShort} onChange={e=>setSettings({...settings, pomoShort:parseInt(e.target.value)})}/></div>
+         <div className="form-group"><label className="form-label">长休息 (分)</label><input type="number" className="form-input" value={settings.pomoLong} onChange={e=>setSettings({...settings, pomoLong:parseInt(e.target.value)})}/></div>
          <div className="modal-actions"><button className="btn btn-primary" onClick={()=>{localStorage.setItem('study_settings', JSON.stringify(settings)); setModalType(null)}}>保存</button></div>
       </Modal>
       <Modal isOpen={modalType==='reset'} title="重置数据" onClose={()=>setModalType(null)}>
@@ -638,6 +1043,218 @@ function App(): JSX.Element {
            <button className="btn" style={{background:'#ef4444', color:'white'}} onClick={()=>{localStorage.clear();window.location.reload()}}>确定重置</button>
          </div>
       </Modal>
+      
+      <Modal isOpen={modalType==='notebook'} title="新建笔记本" onClose={()=>setModalType(null)}>
+         <div className="form-group">
+           <label className="form-label">笔记本名称</label>
+           <input 
+             className="form-input" 
+             value={formInput.f1} 
+             onChange={e=>setFormInput({...formInput, f1:e.target.value})} 
+             autoFocus 
+             placeholder="输入笔记本名称"
+             onKeyPress={e => e.key === 'Enter' && handleSaveNotebook()}
+           />
+         </div>
+         <div className="modal-actions">
+           <button className="btn btn-secondary" onClick={()=>setModalType(null)}>取消</button>
+           <button className="btn btn-primary" onClick={handleSaveNotebook}>创建</button>
+         </div>
+      </Modal>
+      
+      <Modal isOpen={modalType==='renamePage'} title="重命名笔记" onClose={()=>setModalType(null)}>
+         <div className="form-group">
+           <label className="form-label">笔记名称</label>
+           <input 
+             className="form-input" 
+             value={formInput.f1} 
+             onChange={e=>setFormInput({...formInput, f1:e.target.value})} 
+             autoFocus 
+             placeholder="输入笔记名称"
+             onKeyPress={e => {
+               if (e.key === 'Enter' && editingPageId) {
+                 updateNotePage(editingPageId, {title: formInput.f1.trim()})
+                 setModalType(null)
+               }
+             }}
+           />
+         </div>
+         <div className="modal-actions">
+           <button className="btn btn-secondary" onClick={()=>setModalType(null)}>取消</button>
+           <button className="btn btn-primary" onClick={()=>{
+             if (editingPageId && formInput.f1.trim()) {
+               updateNotePage(editingPageId, {title: formInput.f1.trim()})
+               setModalType(null)
+             }
+           }}>保存</button>
+         </div>
+      </Modal>
+      
+      {/* 笔记窗口 */}
+      {noteWindows.map(win => {
+        const page = notePages.find(p => p.id === win.pageId)
+        if (!page) return null
+        
+        const renderMarkdown = (content: string) => {
+          try {
+            return { __html: marked(content) }
+          } catch {
+            return { __html: content }
+          }
+        }
+        
+        return (
+          <div
+            key={win.id}
+            className="note-window"
+            style={{
+              left: win.x,
+              top: win.y,
+              width: win.width,
+              height: win.height,
+              zIndex: win.alwaysOnTop ? 10000 : 100
+            }}
+          >
+            <div className="note-window-bg" style={{opacity: win.opacity}}></div>
+            <div className="note-header">
+              <div 
+                className="note-drag-handle"
+                onMouseDown={e => {
+                  if ((e.target as HTMLElement).closest('button')) return
+                  e.preventDefault()
+                  
+                  const startX = e.clientX
+                  const startY = e.clientY
+                  const startWinX = win.x
+                  const startWinY = win.y
+                  
+                  const handleMove = (e: MouseEvent) => {
+                    const deltaX = e.clientX - startX
+                    const deltaY = e.clientY - startY
+                    updateNoteWindow(win.id, {
+                      x: startWinX + deltaX,
+                      y: startWinY + deltaY
+                    })
+                  }
+                  
+                  const handleUp = () => {
+                    document.removeEventListener('mousemove', handleMove)
+                    document.removeEventListener('mouseup', handleUp)
+                  }
+                  
+                  document.addEventListener('mousemove', handleMove)
+                  document.addEventListener('mouseup', handleUp)
+                }}
+                onDoubleClick={() => {
+                  const input = document.querySelector(`[data-window-id="${win.id}"] .note-title-input`) as HTMLInputElement
+                  if (input) {
+                    input.removeAttribute('readonly')
+                    input.focus()
+                    input.select()
+                  }
+                }}
+              >
+                <input
+                  className="note-title-input"
+                  data-window-id={win.id}
+                  value={page.title}
+                  onChange={e => updateNotePage(page.id, {title: e.target.value})}
+                  onBlur={e => e.target.setAttribute('readonly', 'true')}
+                  readOnly
+                />
+              </div>
+              <div className="note-controls">
+                <button 
+                  className={`note-control-btn ${win.viewMode==='edit'?'active':''}`}
+                  onClick={()=>updateNoteWindow(win.id, {viewMode: 'edit'})}
+                  title="编辑模式"
+                >
+                  <Code size={14}/>
+                </button>
+                <button 
+                  className={`note-control-btn ${win.viewMode==='preview'?'active':''}`}
+                  onClick={()=>updateNoteWindow(win.id, {viewMode: 'preview'})}
+                  title="预览模式"
+                >
+                  <Eye size={14}/>
+                </button>
+                <button 
+                  className={`note-control-btn ${win.viewMode==='split'?'active':''}`}
+                  onClick={()=>updateNoteWindow(win.id, {viewMode: 'split'})}
+                  title="分屏模式"
+                >
+                  <FileText size={14}/>
+                </button>
+                <input
+                  type="range"
+                  min="0.3"
+                  max="1"
+                  step="0.05"
+                  value={win.opacity}
+                  onChange={e=>updateNoteWindow(win.id, {opacity: parseFloat(e.target.value)})}
+                  className="opacity-slider"
+                  title="透明度"
+                />
+                <button className="note-control-btn" onClick={()=>closeNoteWindow(win.id)}><X size={14}/></button>
+              </div>
+            </div>
+            <div className="note-body">
+              {(win.viewMode === 'edit' || win.viewMode === 'split') && (
+                <textarea
+                  className={`note-content ${win.viewMode === 'split' ? 'split-view' : ''}`}
+                  value={page.content}
+                  onChange={e=>updateNotePage(page.id, {content: e.target.value})}
+                  placeholder="支持 Markdown 格式..."
+                />
+              )}
+              {(win.viewMode === 'preview' || win.viewMode === 'split') && (
+                <div 
+                  className={`note-preview ${win.viewMode === 'split' ? 'split-view' : ''}`}
+                  dangerouslySetInnerHTML={renderMarkdown(page.content)}
+                />
+              )}
+            </div>
+            <div 
+              className="note-resize-handle"
+              onMouseDown={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                
+                const startX = e.clientX
+                const startY = e.clientY
+                const startW = win.width
+                const startH = win.height
+                
+                const handleMove = (e: MouseEvent) => {
+                  e.preventDefault()
+                  const deltaX = e.clientX - startX
+                  const deltaY = e.clientY - startY
+                  const newWidth = Math.max(400, startW + deltaX)
+                  const newHeight = Math.max(300, startH + deltaY)
+                  
+                  updateNoteWindow(win.id, {
+                    width: newWidth,
+                    height: newHeight
+                  })
+                }
+                
+                const handleUp = (e: MouseEvent) => {
+                  e.preventDefault()
+                  document.removeEventListener('mousemove', handleMove)
+                  document.removeEventListener('mouseup', handleUp)
+                  document.body.style.cursor = ''
+                  document.body.style.userSelect = ''
+                }
+                
+                document.body.style.cursor = 'nwse-resize'
+                document.body.style.userSelect = 'none'
+                document.addEventListener('mousemove', handleMove)
+                document.addEventListener('mouseup', handleUp)
+              }}
+            />
+          </div>
+        )
+      })}
 
       {/* Alerts & Toasts */}
       {(alertMsg || (settings.forceLock && pomoMode!=='work' && isRunning)) && (
