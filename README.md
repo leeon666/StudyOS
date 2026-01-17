@@ -114,3 +114,15 @@ StudyOS/
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 提交 Pull Request
+
+
+---
+
+## 🤝 支持与反馈 (Support)
+
+StudyOS 目前还是初版，如果你觉得这个小工具对你有帮助：
+
+1.  ⭐️ **请点击右上角的 Star 支持一下作者！** (这对我非常重要)
+2.  🐞 如果遇到 Bug，欢迎提交 Issue 反馈。
+
+> **Enjoy your study time!** 🚀
