@@ -261,6 +261,10 @@ function App(): JSX.Element {
   const [expanded, setExpanded] = useState<number[]>([])
   const webviewRef = useRef<any>(null)
 
+  // Drag & Drop
+  const [draggedTask, setDraggedTask] = useState<number | null>(null)
+  const [dragOverTask, setDragOverTask] = useState<number | null>(null)
+
   // Timer
   const [pomoMode, setPomoMode] = useState<'work'|'short'|'long'>('work')
   const [timeLeft, setTimeLeft] = useState(25*60)
@@ -368,6 +372,42 @@ function App(): JSX.Element {
     saveTasks(nt); setModalType(null)
   }
 
+  // Drag & Drop handlers
+  const handleDragStart = (e: React.DragEvent, taskId: number) => {
+    setDraggedTask(taskId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  
+  const handleDragOver = (e: React.DragEvent, taskId: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    
+    if (draggedTask === null || draggedTask === taskId) return
+    setDragOverTask(taskId)
+  }
+  
+  const handleDrop = (e: React.DragEvent, targetTaskId: number) => {
+    e.preventDefault()
+    
+    if (draggedTask === null || draggedTask === targetTaskId) return
+    
+    const draggedIdx = tasks.findIndex(t => t.id === draggedTask)
+    const targetIdx = tasks.findIndex(t => t.id === targetTaskId)
+    
+    const newTasks = [...tasks]
+    const [removed] = newTasks.splice(draggedIdx, 1)
+    newTasks.splice(targetIdx, 0, removed)
+    
+    saveTasks(newTasks)
+    setDraggedTask(null)
+    setDragOverTask(null)
+  }
+  
+  const handleDragEnd = () => {
+    setDraggedTask(null)
+    setDragOverTask(null)
+  }
+
   const stats = calculateStats(history, tasks)
   const chartOpts = { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false}}, y:{display:false}} }
 
@@ -396,7 +436,15 @@ function App(): JSX.Element {
         {/* Task List (With CRUD) */}
         <div className="task-list-container">
           {tasks.map(t => (
-            <div key={t.id} className={`task-card ${currentTask===t.id?'active':''}`}>
+            <div 
+              key={t.id} 
+              className={`task-card ${currentTask===t.id?'active':''} ${draggedTask===t.id?'dragging':''} ${dragOverTask===t.id?'drag-over':''}`}
+              draggable
+              onDragStart={(e) => handleDragStart(e, t.id)}
+              onDragOver={(e) => handleDragOver(e, t.id)}
+              onDrop={(e) => handleDrop(e, t.id)}
+              onDragEnd={handleDragEnd}
+            >
               <div className="task-header" onClick={() => setExpanded(p=>p.includes(t.id)?p.filter(x=>x!==t.id):[...p,t.id])}>
                 <span style={{maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{t.title}</span>
                 <div className="task-actions" onClick={e=>e.stopPropagation()}>
