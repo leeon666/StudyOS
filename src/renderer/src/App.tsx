@@ -3,9 +3,14 @@ import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
 import { Trophy, Activity, BrainCircuit, ChevronDown, ChevronRight, Menu, Play, Pause, SkipForward, Settings, X, RotateCcw, Calendar, Clock, Flame, Target, TrendingUp, Plus, Edit2, Trash2, Lock, Coffee, GlassWater, Home, Search, ArrowLeft, ArrowRight, RotateCw, Zap, Award, Sun, BarChart3, Languages, StickyNote, Pin, Minimize2, Maximize2, Book, FileText, Eye, Code } from 'lucide-react'
 import confetti from 'canvas-confetti'
-import { marked } from 'marked'
 import './assets/main.css'
 import achievementSound from './assets/sounds/achievement.wav'
+import { renderMarkdownSafe } from './lib/markdown'
+import { ACHIEVEMENTS as ACHIEVEMENTS_MODULE, getUnlockedAchievements } from './lib/achievements'
+import { DEFAULT_SETTINGS as DEFAULT_SETTINGS_MODULE, DEFAULT_TASKS as DEFAULT_TASKS_MODULE, STORAGE_KEYS as STORAGE_KEYS_MODULE, HOME_URL as HOME_URL_MODULE } from './lib/constants'
+import { calculateStats as calculateStatsModule } from './lib/stats'
+import { safeReadStoredJson, safeWriteStoredJson } from './lib/storage'
+import { getStudyOSBridge } from './lib/studyOSRuntime'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Legend, Filler)
 
@@ -19,228 +24,14 @@ interface Notebook { id: number; name: string; createdAt: number; }
 interface NotePage { id: number; notebookId: number; title: string; content: string; createdAt: number; updatedAt: number; }
 interface NoteWindow { id: number; pageId: number; x: number; y: number; width: number; height: number; opacity: number; alwaysOnTop: boolean; viewMode: 'edit' | 'preview' | 'split'; }
 
-const DEFAULT_TASKS: Task[] = [
-  {
-    id: 1,
-    title: '1. 计算机网络复习',
-    links: [
-      { name: 'CS-Wiki', url: 'https://wiki.cs.vt.edu/index.php/Main_Page' },
-      { name: '计算机网络微课堂', url: 'https://www.bilibili.com/video/BV1c4411d7jb' }
-    ]
-  },
-  {
-    id: 2,
-    title: '2. 英语阅读训练',
-    links: [{ name: 'Economist', url: 'https://www.economist.com/' }]
-  },
-  {
-    id: 3,
-    title: '3. 流量语义调研',
-    links: [{ name: '谷歌学术', url: 'https://scholar.google.com/scholar?hl=zh-CN&as_sdt=0%2C5&q=Traffic+semantics&btnG=' }]
-  }
-]
-const DEFAULT_SETTINGS: AppSettings = { pomoWork: 25, pomoShort: 5, pomoLong: 15, waterReminder: true, forceLock: true, theme: 'dark' }
+const DEFAULT_TASKS: Task[] = DEFAULT_TASKS_MODULE as Task[]
+const DEFAULT_SETTINGS: AppSettings = DEFAULT_SETTINGS_MODULE as AppSettings
 
 // --- 28 Achievements (Simplified for brevity but logic intact) ---
-const ACHIEVEMENTS: Achievement[] = [
-  { id: 'start', title: '初次见面', desc: '完成第一个番茄钟', icon: '🐣', rarity: 'common', condition: (_,__,c) => c >= 25*60 },
-  { id: 'focus_2h', title: '心流状态', desc: '累计专注 2 小时', icon: '🌊', rarity: 'common', condition: (t) => t >= 7200 },
-  { id: 'master_10h', title: '学识渊博', desc: '累计专注 10 小时', icon: '🎓', rarity: 'rare', condition: (t) => t >= 36000 },
-  { id: 'god_100h', title: '登峰造极', desc: '累计专注 100 小时', icon: '👑', rarity: 'legendary', condition: (t) => t >= 360000 },
-  { id: 'night', title: '守夜人', desc: '凌晨 2-5 点学习', icon: '🦉', rarity: 'rare', condition: (_,s) => s.some(x=>new Date(x.timestamp).getHours()>=2 && new Date(x.timestamp).getHours()<5) },
-
-  // --- 🆕 新增：时间习惯类 ---
-  {
-    id: 'early_bird', 
-    title: '早起的鸟儿', 
-    desc: '在清晨 5-8 点完成专注', 
-    icon: '🌅', 
-    rarity: 'common', 
-    condition: (_, s) => s.some(x => {
-      const h = new Date(x.timestamp).getHours();
-      return h >= 5 && h < 8;
-    }) 
-  },
-  { 
-    id: 'weekend_warrior', 
-    title: '周末战士', 
-    desc: '周六或周日坚持学习', 
-    icon: '🏖️', 
-    rarity: 'common', 
-    condition: (_, s) => s.some(x => {
-      const day = new Date(x.timestamp).getDay();
-      return day === 0 || day === 6; // 0 is Sunday, 6 is Saturday
-    }) 
-  },
-  { 
-    id: 'lunch_break', 
-    title: '午休时光', 
-    desc: '在 12-13 点期间专注', 
-    icon: '🍱', 
-    rarity: 'common', 
-    condition: (_, s) => s.some(x => new Date(x.timestamp).getHours() === 12) 
-  },
-
-  // --- 🆕 新增：专注强度类 (挑战单次时长) ---
-  { 
-    id: 'deep_dive', 
-    title: '深潜者', 
-    desc: '单次专注超过 45 分钟', 
-    icon: '🤿', 
-    rarity: 'rare', 
-    condition: (_, __, c) => c >= 45 * 60 
-  },
-  { 
-    id: 'iron_will', 
-    title: '钢铁意志', 
-    desc: '单次专注超过 90 分钟', 
-    icon: '🗿', 
-    rarity: 'legendary', 
-    condition: (_, __, c) => c >= 90 * 60 
-  },
-
-  // --- 🆕 新增：数量积累类 (搬砖) ---
-  { 
-    id: 'brick_layer', 
-    title: '搬砖工', 
-    desc: '累计完成 10 个番茄钟', 
-    icon: '🧱', 
-    rarity: 'common', 
-    condition: (_, s) => s.length >= 10 
-  },
-  { 
-    id: 'tower_builder', 
-    title: '高塔建造者', 
-    desc: '累计完成 50 个番茄钟', 
-    icon: '🏗️', 
-    rarity: 'rare', 
-    condition: (_, s) => s.length >= 50 
-  },
-  { 
-    id: 'city_architect', 
-    title: '城市架构师', 
-    desc: '累计完成 500 个番茄钟', 
-    icon: '🏙️', 
-    rarity: 'legendary', 
-    condition: (_, s) => s.length >= 500 
-  },
-
-  // --- 🆕 新增：趣味/隐藏类 ---
-  { 
-    id: 'midnight_oil', 
-    title: '零点钟声', 
-    desc: '跨越午夜 0 点的学习', 
-    icon: '🕛', 
-    rarity: 'rare', 
-    condition: (_, s) => s.some(x => new Date(x.timestamp).getHours() === 0) 
-  },
-  { 
-    id: 'friday_night', 
-    title: '狂欢夜?', 
-    desc: '周五晚上 20 点后还在学习', 
-    icon: '🍸', 
-    rarity: 'legendary', 
-    condition: (_, s) => s.some(x => {
-      const d = new Date(x.timestamp);
-      return d.getDay() === 5 && d.getHours() >= 20;
-    }) 
-  }
-]
+const ACHIEVEMENTS: Achievement[] = ACHIEVEMENTS_MODULE as Achievement[]
 
 // --- Stats Logic ---
-const calculateStats = (history: StudySession[], tasks: Task[]) => {
-  const now = new Date()
-  const todayStr = now.toISOString().split('T')[0]
-  const totalSec = history.reduce((a, b) => a + b.duration, 0)
-  const todaySec = history.filter(h => h.date === todayStr).reduce((a, b) => a + b.duration, 0)
-
-  // 本周数据
-  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay())
-  const weekSec = history.filter(h => new Date(h.date) >= weekStart).reduce((a, b) => a + b.duration, 0)
-  
-  // 上周数据（用于对比）
-  const lastWeekStart = new Date(weekStart); lastWeekStart.setDate(lastWeekStart.getDate() - 7)
-  const lastWeekEnd = new Date(weekStart); lastWeekEnd.setDate(lastWeekEnd.getDate() - 1)
-  const lastWeekSec = history.filter(h => { const d = new Date(h.date); return d >= lastWeekStart && d <= lastWeekEnd }).reduce((a, b) => a + b.duration, 0)
-  const weekGrowth = lastWeekSec > 0 ? Math.round(((weekSec - lastWeekSec) / lastWeekSec) * 100) : 100
-
-  // 本月数据
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const monthSec = history.filter(h => new Date(h.date) >= monthStart).reduce((a, b) => a + b.duration, 0)
-
-  // Streak
-  const dates = Array.from(new Set(history.map(h => h.date))).sort()
-  let streak = 0, maxStreak = 0
-  if (dates.length > 0) {
-    const today = todayStr
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
-    if (dates.includes(today) || dates.includes(yesterday)) {
-      let d = new Date(dates.includes(today)?today:yesterday);
-      while(dates.includes(d.toISOString().split('T')[0])) { streak++; d.setDate(d.getDate()-1); }
-    }
-    // 计算历史最长连续
-    let tempStreak = 1
-    for (let i = 1; i < dates.length; i++) {
-      const prev = new Date(dates[i-1]), curr = new Date(dates[i])
-      if ((curr.getTime() - prev.getTime()) === 86400000) { tempStreak++ } 
-      else { maxStreak = Math.max(maxStreak, tempStreak); tempStreak = 1 }
-    }
-    maxStreak = Math.max(maxStreak, tempStreak)
-  }
-
-  // 学习效率评分 (基于多维度)
-  const avgDailyMin = dates.length > 0 ? Math.round(totalSec / 60 / dates.length) : 0
-  const consistencyScore = Math.min(100, Math.round((streak / 7) * 50 + (dates.length / 30) * 50))
-  const intensityScore = Math.min(100, Math.round((avgDailyMin / 120) * 100))
-  const efficiencyScore = Math.round((consistencyScore + intensityScore) / 2)
-  const efficiencyGrade = efficiencyScore >= 90 ? 'S' : efficiencyScore >= 80 ? 'A' : efficiencyScore >= 60 ? 'B' : efficiencyScore >= 40 ? 'C' : 'D'
-
-  // 最佳学习时段
-  const hourDist = new Array(24).fill(0); history.forEach(h => hourDist[new Date(h.timestamp).getHours()] += h.duration)
-  const peakHour = hourDist.indexOf(Math.max(...hourDist))
-  const peakPeriod = peakHour < 6 ? '深夜' : peakHour < 12 ? '上午' : peakHour < 18 ? '下午' : '晚上'
-
-  // Trend (7 days)
-  const last7DaysLabels: string[] = [], last7DaysData: number[] = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i); const s = d.toISOString().split('T')[0]
-    last7DaysLabels.push(s.slice(5))
-    last7DaysData.push(Math.floor(history.filter(h => h.date === s).reduce((a, b) => a + b.duration, 0) / 60))
-  }
-
-  // 30天趋势
-  const last30DaysData: number[] = []
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i); const s = d.toISOString().split('T')[0]
-    last30DaysData.push(Math.floor(history.filter(h => h.date === s).reduce((a, b) => a + b.duration, 0) / 60))
-  }
-  const avg30Days = last30DaysData.length > 0 ? Math.round(last30DaysData.reduce((a,b)=>a+b,0) / 30) : 0
-
-  // Distribution
-  const taskMap = new Map<string, number>()
-  history.forEach(h => { const t = tasks.find(x => x.id === h.taskId)?.title || '已删除'; taskMap.set(t, (taskMap.get(t)||0) + h.duration) })
-
-  // Heatmap
-  const heatmap: {date: string, count: number, level: number}[] = []; const start = new Date(); start.setFullYear(start.getFullYear()-1);
-  const dailyMap = new Map(); history.forEach(h => dailyMap.set(h.date, (dailyMap.get(h.date)||0)+h.duration));
-  for(let d=new Date(start); d<=new Date(); d.setDate(d.getDate()+1)) {
-    const k = d.toISOString().split('T')[0]; const v = dailyMap.get(k)||0;
-    heatmap.push({ date: k, count: v, level: v>7200?4:v>3600?3:v>1800?2:v>0?1:0 })
-  }
-
-  // 学习天数统计
-  const totalDays = dates.length
-  const thisMonthDays = dates.filter(d => new Date(d) >= monthStart).length
-
-  return { 
-    totalSec, todaySec, weekSec, monthSec, weekGrowth, lastWeekSec,
-    streak, maxStreak, totalDays, thisMonthDays,
-    efficiencyScore, efficiencyGrade, consistencyScore, intensityScore, avgDailyMin,
-    peakHour, peakPeriod, hourDist,
-    last7DaysLabels, last7DaysData, last30DaysData, avg30Days,
-    taskMap, heatmap 
-  }
-}
+const calculateStats = (history: StudySession[], tasks: Task[]) => calculateStatsModule(history, tasks)
 
 // --- Modal Component ---
 const Modal = ({ isOpen, title, onClose, children }: any) => {
@@ -267,7 +58,7 @@ function App(): JSX.Element {
   const [currentTask, setCurrentTask] = useState<number>(0)
   const [activeUrl, setActiveUrl] = useState('https://www.google.com')
   const [urlInput, setUrlInput] = useState('https://www.google.com')
-  const HOME_URL = 'https://www.google.com'
+  const HOME_URL = HOME_URL_MODULE
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [expanded, setExpanded] = useState<number[]>([])
   const webviewRef = useRef<any>(null)
@@ -297,20 +88,26 @@ function App(): JSX.Element {
 
   // Init
   useEffect(() => {
-    const sTasks = localStorage.getItem('study_tasks'); if(sTasks) { const p=JSON.parse(sTasks); setTasks(p); if(p.length) setCurrentTask(p[0].id); } else { setTasks(DEFAULT_TASKS); setCurrentTask(DEFAULT_TASKS[0].id); }
-    const sHist = localStorage.getItem('study_history'); if(sHist) setHistory(JSON.parse(sHist));
-    const sAch = localStorage.getItem('study_achievements'); if(sAch) { setUnlocked(JSON.parse(sAch)); unlockedRef.current=JSON.parse(sAch); }
-    const sSet = localStorage.getItem('study_settings'); if(sSet) setSettings(JSON.parse(sSet));
+    const storedTasks = safeReadStoredJson<Task[]>(localStorage, STORAGE_KEYS_MODULE.tasks, DEFAULT_TASKS)
+    const nextTasks = storedTasks.length > 0 ? storedTasks : DEFAULT_TASKS
+    setTasks(nextTasks)
+    setCurrentTask(nextTasks[0]?.id ?? 0)
+
+    setHistory(safeReadStoredJson<StudySession[]>(localStorage, STORAGE_KEYS_MODULE.history, []))
+
+    const storedAchievements = safeReadStoredJson<string[]>(localStorage, STORAGE_KEYS_MODULE.achievements, [])
+    setUnlocked(storedAchievements)
+    unlockedRef.current = storedAchievements
+
+    setSettings(safeReadStoredJson<AppSettings>(localStorage, STORAGE_KEYS_MODULE.settings, DEFAULT_SETTINGS))
     
     // 加载笔记本和笔记页
-    const sNotebooks = localStorage.getItem('study_notebooks'); 
-    if(sNotebooks) {
-      const nb = JSON.parse(sNotebooks)
-      setNotebooks(nb)
-      if(nb.length > 0) setSelectedNotebook(nb[0].id)
-    }
-    const sNotePages = localStorage.getItem('study_note_pages'); if(sNotePages) setNotePages(JSON.parse(sNotePages));
-    const sNoteWins = localStorage.getItem('study_note_windows'); if(sNoteWins) setNoteWindows(JSON.parse(sNoteWins));
+    const storedNotebooks = safeReadStoredJson<Notebook[]>(localStorage, STORAGE_KEYS_MODULE.notebooks, [])
+    setNotebooks(storedNotebooks)
+    if (storedNotebooks.length > 0) setSelectedNotebook(storedNotebooks[0].id)
+
+    setNotePages(safeReadStoredJson<NotePage[]>(localStorage, STORAGE_KEYS_MODULE.notePages, []))
+    setNoteWindows(safeReadStoredJson<NoteWindow[]>(localStorage, STORAGE_KEYS_MODULE.noteWindows, []))
   }, [])
 
   // 主题切换效果
@@ -361,18 +158,20 @@ function App(): JSX.Element {
     if (!currentTask) return
     const rec = { date: new Date().toISOString().split('T')[0], timestamp: Date.now(), duration: dur, taskId: currentTask }
     setHistory(prev => {
-      const next = [...prev, rec]; localStorage.setItem('study_history', JSON.stringify(next));
+      const next = [...prev, rec]; safeWriteStoredJson(localStorage, STORAGE_KEYS_MODULE.history, next);
       checkAch(next); return next
     })
   }
   const checkAch = (hist: StudySession[]) => {
     const total = hist.reduce((a,b)=>a+b.duration, 0)
-    ACHIEVEMENTS.forEach(ach => {
-      if (!unlockedRef.current.includes(ach.id) && ach.condition(total, hist, 25*60)) {
-        unlockedRef.current.push(ach.id); setUnlocked([...unlockedRef.current]);
-        localStorage.setItem('study_achievements', JSON.stringify(unlockedRef.current));
-        triggerToast(ach);
-      }
+    const newlyUnlocked = getUnlockedAchievements(total, hist, 25*60, unlockedRef.current) as Achievement[]
+    if (newlyUnlocked.length === 0) return
+
+    unlockedRef.current = [...unlockedRef.current, ...newlyUnlocked.map(ach => ach.id)]
+    setUnlocked([...unlockedRef.current])
+    safeWriteStoredJson(localStorage, STORAGE_KEYS_MODULE.achievements, unlockedRef.current)
+    newlyUnlocked.forEach(ach => {
+      triggerToast(ach)
     })
   }
   const handleTimerEnd = () => {
@@ -393,7 +192,7 @@ function App(): JSX.Element {
   const triggerAlert = (t: string, i: any) => { setAlertMsg({title:t, icon:i}); setTimeout(()=>setAlertMsg(null), 10000) }
 
   // CRUD
-  const saveTasks = (nt: Task[]) => { setTasks(nt); localStorage.setItem('study_tasks', JSON.stringify(nt)); }
+  const saveTasks = (nt: Task[]) => { setTasks(nt); safeWriteStoredJson(localStorage, STORAGE_KEYS_MODULE.tasks, nt); }
   const handleSaveTask = () => {
     if (!formInput.f1) return
     const nt = editTask ? tasks.map(t=>t.id===editTask.id?{...t, title:formInput.f1}:t) : [...tasks, {id:Date.now(), title:formInput.f1, links:[]}]
@@ -518,17 +317,17 @@ function App(): JSX.Element {
   // 笔记本功能
   const saveNotebooks = (newNotebooks: Notebook[]) => {
     setNotebooks(newNotebooks)
-    localStorage.setItem('study_notebooks', JSON.stringify(newNotebooks))
+    safeWriteStoredJson(localStorage, STORAGE_KEYS_MODULE.notebooks, newNotebooks)
   }
   
   const saveNotePages = (newPages: NotePage[]) => {
     setNotePages(newPages)
-    localStorage.setItem('study_note_pages', JSON.stringify(newPages))
+    safeWriteStoredJson(localStorage, STORAGE_KEYS_MODULE.notePages, newPages)
   }
   
   const saveNoteWindows = (newWindows: NoteWindow[]) => {
     setNoteWindows(newWindows)
-    localStorage.setItem('study_note_windows', JSON.stringify(newWindows))
+    safeWriteStoredJson(localStorage, STORAGE_KEYS_MODULE.noteWindows, newWindows)
   }
   
   const createNotebook = () => {
@@ -603,27 +402,19 @@ function App(): JSX.Element {
     saveNotePages(newPages)
   }
   
-  // 移除 IPC 监听
-  /*
   useEffect(() => {
-    const { ipcRenderer } = window.require('electron')
-    
-    ipcRenderer.on('note-window-closed', (_, windowId) => {
-      console.log('Main app: note window closed', windowId)
+    const bridge = getStudyOSBridge()
+
+    const offClosed = bridge.onNoteWindowClosed((windowId) => {
       saveNoteWindows(noteWindows.filter(w => w.id !== windowId))
     })
-    
-    // 响应笔记窗口的数据请求
-    ipcRenderer.on('request-note-data', (_, windowId) => {
-      console.log('Main app: received request for note data', windowId)
+
+    const offRequest = bridge.onRequestNoteData((windowId) => {
       const win = noteWindows.find(w => w.id === windowId)
-      console.log('Found window:', win)
       if (win) {
         const page = notePages.find(p => p.id === win.pageId)
-        console.log('Found page:', page)
         if (page) {
-          console.log('Sending note data to window', windowId)
-          ipcRenderer.send('update-note-data', {
+          bridge.updateNoteData({
             windowId: win.id,
             page,
             window: win
@@ -631,22 +422,20 @@ function App(): JSX.Element {
         }
       }
     })
-    
-    // 接收来自笔记窗口的页面更新
-    ipcRenderer.on('update-note-page-from-window', (_, page) => {
-      console.log('Main app: received page update from window', page)
+
+    const offUpdate = bridge.onUpdateNotePageFromWindow((page) => {
       const newPages = notePages.map(p => 
         p.id === page.id ? page : p
       )
       saveNotePages(newPages)
     })
-    
+
     return () => {
-      ipcRenderer.removeAllListeners('note-window-closed')
-      ipcRenderer.removeAllListeners('request-note-data')
-      ipcRenderer.removeAllListeners('update-note-page-from-window')
+      offClosed()
+      offRequest()
+      offUpdate()
     }
-  */
+  }, [noteWindows, notePages])
   
   const deleteNotebook = (notebookId: number) => {
     if (!confirm('确定删除这个笔记本吗？其中的所有笔记也会被删除。')) return
@@ -769,7 +558,7 @@ function App(): JSX.Element {
           ref={webviewRef} 
           src={activeUrl} 
           style={{display: view==='browser'?'flex':'none', flex:1}}
-          allowpopups="true"
+          allowpopups={true}
         />
 
         {view === 'stats' && (
@@ -1034,7 +823,7 @@ function App(): JSX.Element {
          <div className="form-group"><label className="form-label">专注时长 (分)</label><input type="number" className="form-input" value={settings.pomoWork} onChange={e=>setSettings({...settings, pomoWork:parseInt(e.target.value)})}/></div>
          <div className="form-group"><label className="form-label">短休息 (分)</label><input type="number" className="form-input" value={settings.pomoShort} onChange={e=>setSettings({...settings, pomoShort:parseInt(e.target.value)})}/></div>
          <div className="form-group"><label className="form-label">长休息 (分)</label><input type="number" className="form-input" value={settings.pomoLong} onChange={e=>setSettings({...settings, pomoLong:parseInt(e.target.value)})}/></div>
-         <div className="modal-actions"><button className="btn btn-primary" onClick={()=>{localStorage.setItem('study_settings', JSON.stringify(settings)); setModalType(null)}}>保存</button></div>
+         <div className="modal-actions"><button className="btn btn-primary" onClick={()=>{safeWriteStoredJson(localStorage, STORAGE_KEYS_MODULE.settings, settings); setModalType(null)}}>保存</button></div>
       </Modal>
       <Modal isOpen={modalType==='reset'} title="重置数据" onClose={()=>setModalType(null)}>
          <div style={{color:'#94a3b8', marginBottom:20}}>确定要重置所有数据吗？这将清除所有任务、学习记录和成就，此操作不可撤销。</div>
@@ -1094,14 +883,6 @@ function App(): JSX.Element {
       {noteWindows.map(win => {
         const page = notePages.find(p => p.id === win.pageId)
         if (!page) return null
-        
-        const renderMarkdown = (content: string) => {
-          try {
-            return { __html: marked(content) }
-          } catch {
-            return { __html: content }
-          }
-        }
         
         return (
           <div
@@ -1208,10 +989,10 @@ function App(): JSX.Element {
                 />
               )}
               {(win.viewMode === 'preview' || win.viewMode === 'split') && (
-                <div 
-                  className={`note-preview ${win.viewMode === 'split' ? 'split-view' : ''}`}
-                  dangerouslySetInnerHTML={renderMarkdown(page.content)}
-                />
+                  <div
+                    className={`note-preview ${win.viewMode === 'split' ? 'split-view' : ''}`}
+                    dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(page.content) }}
+                  />
               )}
             </div>
             <div 
